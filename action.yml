@@ -1,0 +1,65 @@
+name: crawlwise audit
+description: Audit a URL on every pull request, update one comment with what changed, and fail the build on a critical regression.
+author: crawlwise
+
+inputs:
+  url:
+    description: The URL to audit, usually a preview deployment.
+    required: true
+  api-key:
+    description: A crawlwise API key. Create one at https://crawlwise.site/account/api. Pro plan or above.
+    required: true
+  endpoint:
+    description: API origin.
+    required: false
+    default: https://crawlwise.site
+  fail-on:
+    description: critical, warning, or never.
+    required: false
+    default: critical
+  comment:
+    description: Post or update a pull-request comment with the diff.
+    required: false
+    default: 'true'
+  github-token:
+    description: Token used to read the pull request and write the comment.
+    required: false
+    default: ${{ github.token }}
+  min-score:
+    description: Also fail when the Crawlwise checklist score is below this number (0-100). Empty means no score gate.
+    required: false
+    default: ''
+  baseline:
+    description: An explicit audit id to compare against. Defaults to the most recent stored audit of the same URL.
+    required: false
+    default: ''
+
+outputs:
+  audit-id:
+    description: The audit id this run produced.
+  severity:
+    description: The highest severity found.
+  score:
+    description: The Crawlwise checklist score of this run, or not-scored.
+  regressions:
+    description: How many checks regressed.
+
+runs:
+  using: composite
+  steps:
+    - name: Audit and diff
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_API_KEY: ${{ inputs.api-key }}
+        INPUT_ENDPOINT: ${{ inputs.endpoint }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_MIN_SCORE: ${{ inputs.min-score }}
+        CRAWLWISE_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: node "${{ github.action_path }}/index.mjs"
+
+branding:
+  icon: search
+  color: blue
