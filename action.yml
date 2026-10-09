@@ -61,5 +61,5 @@ runs:
       run: node "${{ github.action_path }}/index.mjs"
 
 branding:
-  icon: search
-  color: blue
+  icon: target
+  color: orange
