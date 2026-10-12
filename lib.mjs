@@ -118,7 +118,44 @@ function cells(values) {
   return values.map((value) => String(value ?? '').replace(/\|/g, '\\|').replace(/\n+/g, ' ').slice(0, 200)).join(' | ') + ' |';
 }
 
-export function baselineFromRuns(runs, url) {
-  const match = (runs ?? []).find((run) => run.url === url && run.id);
+/**
+ * The URL the way the server stores it (`publicUrl` in lib/network.ts): a bare
+ * domain gains https://, the host is lowercased with any trailing dot dropped,
+ * the fragment goes, and the WHATWG serialisation adds the root slash. Matching
+ * the raw input instead missed every run for `example.com` stored as
+ * `https://example.com/`.
+ */
+export function normaliseAuditUrl(raw) {
+  const input = String(raw ?? '').trim();
+  if (!input) return '';
+  try {
+    const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(input) ? input : 'https://' + input);
+    url.hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return input;
+  }
+}
+
+/**
+ * The newest stored run of this URL that is not the run being judged.
+ *
+ * The current audit is saved before the list is read, so it is the newest
+ * match; comparing it with itself finds nothing, every time. `exclude` takes
+ * its ids (the job id and the stored run id). `before` is the fallback for a
+ * server that does not report the run id: anything stored at or after the
+ * audit started is this run, not a baseline.
+ */
+export function baselineFromRuns(runs, url, { exclude = [], before = '' } = {}) {
+  const target = normaliseAuditUrl(url);
+  const skip = new Set(exclude.filter(Boolean));
+  const match = (runs ?? []).find(
+    (run) =>
+      run.id &&
+      !skip.has(run.id) &&
+      normaliseAuditUrl(run.url) === target &&
+      !(before && run.createdAt && String(run.createdAt) >= before),
+  );
   return match ? match.id : null;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { baselineFromRuns, diffChecks, highestSeverity, renderComment, shouldFail } from './lib.mjs';
+import { baselineFromRuns, diffChecks, highestSeverity, normaliseAuditUrl, renderComment, shouldFail } from './lib.mjs';
 
 const check = (id, status, detail = '') => ({ id, title: id, status, detail });
 
@@ -65,4 +65,24 @@ test('the baseline comes from a stored run of the same URL, never a guess', () =
   const runs = [{ id: 'a', url: 'https://other.com/' }, { id: 'b', url: 'https://example.com/' }];
   assert.equal(baselineFromRuns(runs, 'https://example.com/'), 'b');
   assert.equal(baselineFromRuns(runs, 'https://third.com/'), null);
+});
+
+test('the automatic baseline skips the run being judged', () => {
+  // Newest first, as GET /v1/audits returns them. run-now is this audit's own report.
+  const runs = [
+    { id: 'run-now', url: 'https://example.com/', createdAt: '2026-10-12T10:05:00.000Z' },
+    { id: 'run-old', url: 'https://example.com/', createdAt: '2026-10-11T09:00:00.000Z' },
+  ];
+  assert.equal(baselineFromRuns(runs, 'https://example.com/', { exclude: ['job-1', 'run-now'] }), 'run-old');
+  // Without a run id from the server, anything stored after the audit began is this run.
+  assert.equal(baselineFromRuns(runs, 'https://example.com/', { before: '2026-10-12T10:00:00.000Z' }), 'run-old');
+  assert.equal(baselineFromRuns([runs[0]], 'https://example.com/', { exclude: ['run-now'] }), null);
+});
+
+test('the baseline matches the URL the way the server stores it', () => {
+  assert.equal(normaliseAuditUrl('example.com'), 'https://example.com/');
+  assert.equal(normaliseAuditUrl('https://Example.COM./#top'), 'https://example.com/');
+  assert.equal(normaliseAuditUrl('https://example.com/blog?a=1'), 'https://example.com/blog?a=1');
+  const runs = [{ id: 'b', url: 'https://example.com/' }];
+  assert.equal(baselineFromRuns(runs, 'example.com'), 'b');
 });

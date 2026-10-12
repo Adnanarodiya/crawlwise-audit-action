@@ -1,5 +1,5 @@
 import { appendFileSync } from 'node:fs';
-import { baselineFromRuns, diffChecks, highestSeverity, renderComment, shouldFail } from './lib.mjs';
+import { baselineFromRuns, diffChecks, highestSeverity, normaliseAuditUrl, renderComment, shouldFail } from './lib.mjs';
 
 const endpoint = (process.env.INPUT_ENDPOINT || 'https://crawlwise.site').replace(/\/+$/, '');
 const apiKey = process.env.INPUT_API_KEY || '';
@@ -32,13 +32,16 @@ async function api(path, init = {}) {
 }
 
 async function audit(target) {
+  const startedAt = new Date().toISOString();
   const started = await api('/v1/audits', { method: 'POST', body: JSON.stringify({ url: target }) });
   const id = started.id;
   const deadline = Date.now() + 5 * 60_000;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     const job = await api('/v1/audits/' + encodeURIComponent(id));
-    if (job.status === 'complete') return { id, report: job.report };
+    // `id` is the job; `run_id` is the stored report, which is what the
+    // history list holds. `url` is the server's own normalised form.
+    if (job.status === 'complete') return { id, runId: job.run_id || '', url: job.url || '', startedAt, report: job.report };
     if (job.status === 'failed' || job.status === 'abandoned') die('the audit of ' + target + ' ' + job.status + ': ' + (job.error || 'no reason given'));
   }
   die('the audit of ' + target + ' did not finish within five minutes');
@@ -54,7 +57,12 @@ let baselineId = explicitBaseline;
 let baselineLabel = explicitBaseline ? 'audit ' + explicitBaseline : '';
 if (!baselineId) {
   const listed = await api('/v1/audits?limit=20');
-  baselineId = baselineFromRuns(listed.audits, url);
+  // This run is already in the list, newest of all. Skip it by id, or, from a
+  // server that does not report run_id, by having been stored after we began.
+  baselineId = baselineFromRuns(listed.audits, current.url || normaliseAuditUrl(url), {
+    exclude: [current.id, current.runId],
+    before: current.runId ? '' : current.startedAt,
+  });
   baselineLabel = baselineId ? 'the most recent stored audit of this URL' : '';
 }
 
